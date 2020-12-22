@@ -181,8 +181,21 @@ func (m *cMux) serve(c net.Conn, donec <-chan struct{}, wg *sync.WaitGroup) {
 	}
 	for _, sl := range m.sls {
 		for _, s := range sl.ss {
-			matched := s(muc.Conn, muc.startSniffing())
-			if matched {
+			matched := make(chan bool)
+			go func() {
+				matched <- s(muc.Conn, muc.startSniffing())
+			}()
+
+			var hasMatched bool
+			select {
+			case hasMatched =<-matched:
+				break
+			case <-donec:
+				_ = c.Close()
+				return
+			}
+
+			if hasMatched {
 				muc.doneSniffing()
 				if m.readTimeout > noTimeout {
 					_ = c.SetReadDeadline(time.Time{})
